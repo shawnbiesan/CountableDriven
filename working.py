@@ -6,7 +6,9 @@ from sklearn.metrics import hamming_loss, log_loss, roc_auc_score
 import time
 import numpy as np
 from model_info import get_pipeline
-import pickle
+from load_data import get_train_test
+
+import argparse
 
 
 def remove_train_data(train, test):
@@ -55,7 +57,7 @@ def validate_model_sep(train, labels):
     sum_mean = 0
     sum_std = 0
     print train.shape
-    df = train[0:int(train.shape[0] * .80)]
+    df = train[0:int(train.shape[0] * .80)].drop('release', axis=1)
     labels = labels[0:int(train.shape[0] * .80)]
     print df.shape
     df = df.fillna(0)
@@ -78,7 +80,7 @@ def validate_model_sep(train, labels):
             pipe_clf = get_pipeline()
             pipe_clf.fit(train_sample, train_test)
             preds = pipe_clf.predict_proba(test_sample)
-            results[output].append(log_loss(test_test, preds))
+            results[output].append(log_loss(test_test, preds[0:, 1:]))
             print results[output]
 
             print "elapsed "
@@ -90,45 +92,13 @@ def validate_model_sep(train, labels):
         print "Results %s: " % (result,) + str( np.array(results[result]).mean()) + " " + str(np.array(results[result]).std())
     print "Final: %s %s" %(1.0 * sum_mean / len(results), 1.0 * sum_std / len(results))
 
-
-
-
-X_labels = pd.read_csv('train_labels.csv')
+X, X_test, X_labels = get_train_test()
 outputs = X_labels.drop('id', axis=1).columns
-
-#X = pd.concat([pd.read_csv('train.csv'), X_labels.drop('id', axis=1)], axis=1)
-#X_labels = None
-#X_test = pd.read_csv('test.csv')
-
-#cat_columns = [m for m in X.columns if 'c_' in m]
-
-#i = 0
-#poss_vals = dict()
-#for col in cat_columns:
-#    if len(pd.unique(X[col])) != len(pd.unique(X_test[col])):
-#        X.drop(col, axis=1)
-#        X_test.drop(col, axis=1)
-#    else:
-#        dummies = get_dummies(X[col], prefix=col)
-#        dummies_test = get_dummies(X_test[col], prefix=col)
-#        X[dummies.columns] = dummies
-#        X_test[dummies.columns] = dummies
-#X = X.drop(cat_columns, axis=1).fillna(0)
-#X_test = X_test.drop(cat_columns, axis=1).fillna(0)
-#print "cleaned"
-
-#pickle.dump(X, open('X_pickle.p', 'wb'))
-#pickle.dump(X_test, open('X_test_pickle.p', 'wb'))
-
-print "dumps"
-
-X = pickle.load(open('X_pickle.p', 'rb'))
-X_test = pickle.load(open('X_test_pickle.p', 'rb'))
-
 #validate_model_sep(X.drop(outputs, axis=1).drop('release', axis=1), X[outputs])
 
 print "loaded pickle"
 #models = validate_model_holdout(X)
+validate_model_sep(X.drop(outputs, axis=1), X[outputs])
 submission = pd.read_csv('submission.csv')
 
 X = X.drop('release', axis=1)
@@ -151,6 +121,3 @@ for output in outputs:
 #    submission[output] = av_pred[i]
 
 submission.to_csv('resultsMixed.csv', index=False)
-
-
-
