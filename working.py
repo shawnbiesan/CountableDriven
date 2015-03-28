@@ -5,7 +5,7 @@ from sklearn import cross_validation
 from sklearn.metrics import hamming_loss, log_loss, roc_auc_score
 import time
 import numpy as np
-from model_info import get_pipeline
+from model_info import get_pipeline, get_rf_pipeline
 from load_data import get_train_test
 
 import argparse
@@ -28,27 +28,22 @@ def validate_model_holdout(train):
     preds = []
     grouped = train.groupby('release')
 
-    split_data_train = pd.concat([df[0:int(df.shape[0] * .80)].drop('release', axis=1) for name, df in grouped], axis=0)
+    split_data_train = pd.concat([df[0:int(df.shape[0] * .80)] for name, df in grouped], axis=0)
     split_data_train = split_data_train.fillna(0)
 
-    split_data_holdout = pd.concat([df[int(df.shape[0] * .80):].drop('release', axis=1) for name, df in grouped], axis=0)
+    split_data_holdout = pd.concat([df[int(df.shape[0] * .20):] for name, df in grouped], axis=0)
     split_data_holdout = split_data_holdout.fillna(0)
 
-
-    for name, group in grouped:
-        t0 = time.time()
-        models[name] = get_pipeline()
-        models[name].fit(split_data_train.drop(outputs, axis=1), split_data_train[outputs])
-        preds.append(models[name].predict_proba(split_data_holdout.drop(outputs, axis=1)))
-        print "elapsed "
-        print time.time() - t0
-
-    preds = np.array(preds)
-    av_pred = (.25 * preds[0]) + (.25 * preds[1]) + (.50 * preds[2])
-    for i, output in enumerate(outputs):
-        print output
-        results[output] = log_loss(split_data_holdout[output], av_pred[i])
+    for output in outputs:
+        print "fit " + output
+        pipe_clf = get_pipeline()
+        pipe_clf.fit(split_data_train.drop(outputs, axis=1), split_data_train[output])
+        preds = pipe_clf.predict_proba(split_data_holdout.drop(outputs, axis=1))
+        X_test[output + 'pred'] = preds[0:, 1:]
+        X[output + 'pred'] = X[output]
+        results[output].append(log_loss(test_test, preds[0:, 1:]))
         print results[output]
+
     return models
 
 
@@ -57,11 +52,9 @@ def validate_model_sep(train, labels):
     sum_mean = 0
     sum_std = 0
     print train.shape
-    df = train[0:int(train.shape[0] * .80)].drop('release', axis=1)
+    df = train[0:int(train.shape[0] * .80)]
     labels = labels[0:int(train.shape[0] * .80)]
     print df.shape
-    df = df.fillna(0)
-
 
     for output in labels.columns:
         cv = cross_validation.StratifiedKFold(labels[output])
@@ -79,6 +72,7 @@ def validate_model_sep(train, labels):
 
             pipe_clf = get_pipeline()
             pipe_clf.fit(train_sample, train_test)
+            
             preds = pipe_clf.predict_proba(test_sample)
             results[output].append(log_loss(test_test, preds[0:, 1:]))
             print results[output]
@@ -94,15 +88,13 @@ def validate_model_sep(train, labels):
 
 X, X_test, X_labels = get_train_test()
 outputs = X_labels.drop('id', axis=1).columns
-#validate_model_sep(X.drop(outputs, axis=1).drop('release', axis=1), X[outputs])
 
 print "loaded pickle"
 #models = validate_model_holdout(X)
-validate_model_sep(X.drop(outputs, axis=1), X[outputs])
+#validate_model_sep(X.drop(outputs, axis=1), X[outputs])
 submission = pd.read_csv('submission.csv')
 
-X = X.drop('release', axis=1)
-X_test = X_test.drop('release', axis=1)
+to_drop = []
 for output in outputs:
     print "fit " + output
     pipe_clf = get_pipeline()
@@ -110,14 +102,16 @@ for output in outputs:
     preds = pipe_clf.predict_proba(X_test)
     X_test[output + 'pred'] = preds[0:, 1:]
     X[output + 'pred'] = X[output]
+    to_drop.append(output + 'pred')
     submission[output] = preds[0:, 1:]
-#preds = []
-#for name, _ in X.groupby('release'):
-#    preds.append(models[name].predict_proba(X_test.drop('release', axis=1)))
-#preds = np.array(preds)
-#av_pred = (.25 * preds[0]) + (.25 * preds[1]) + (.50 * preds[2])
-#for i, output in enumerate(outputs):
-#    print output
-#    submission[output] = av_pred[i]
+    
+#for output in reversed(outputs):
+#    print "fit " + output
+#    pipe_clf = get_pipeline()
+#    pipe_clf.fit(X.drop(outputs, axis=1).drop(to_drop, axis=1), X[output])
+#    preds = pipe_clf.predict_proba(X_test.drop(to_drop, axis=1))
+#    X_test[output + 'predr'] = preds[0:, 1:]
+#    X[output + 'predr'] = X[output]
+#    submission[output] = (submission[output].values + preds[0:, 1:]) / 2.0
 
 submission.to_csv('resultsMixed.csv', index=False)
